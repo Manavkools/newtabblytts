@@ -6,7 +6,6 @@ This guide walks you through setting up your GitHub repository and deploying to 
 
 - GitHub account
 - RunPod account with credits
-- Docker Hub account (for GitHub Actions CI/CD)
 
 ## Step 1: Create GitHub Repository
 
@@ -39,21 +38,13 @@ git branch -M main
 git push -u origin main
 ```
 
-## Step 2: Set Up GitHub Secrets (for CI/CD)
+## Step 2: Deploy Directly to RunPod
 
-For automated Docker builds via GitHub Actions:
-
-1. Go to your repository on GitHub
-2. Click **Settings** → **Secrets and variables** → **Actions**
-3. Click **New repository secret**
-4. Add these secrets:
-
-   - `DOCKERHUB_USERNAME`: Your Docker Hub username
-   - `DOCKERHUB_PASSWORD`: Your Docker Hub password or access token
+RunPod will build directly from your GitHub repository using the Dockerfile - no Docker Hub needed!
 
 ## Step 3: Deploy to RunPod via GitHub Integration
 
-### Method 1: Direct GitHub Integration (Recommended)
+### Direct GitHub Integration (Recommended)
 
 1. **Log in to RunPod Console**
    - Go to [RunPod Console](https://www.runpod.io/console/serverless)
@@ -89,23 +80,6 @@ For automated Docker builds via GitHub Actions:
    - RunPod will build from your GitHub repository
    - Wait 5-10 minutes for first build
 
-### Method 2: GitHub Actions → Docker Hub → RunPod
-
-1. **Push to GitHub**
-   ```bash
-   git push origin main
-   ```
-
-2. **GitHub Actions Build**
-   - GitHub Actions will automatically build and push Docker image
-   - Check Actions tab in GitHub to monitor build progress
-
-3. **Deploy on RunPod**
-   - Go to RunPod Console
-   - Click **"New Endpoint"**
-   - Select **"Import from Docker Registry"**
-   - Enter: `YOUR_DOCKERHUB_USERNAME/sesame-csm-1b-api:latest`
-   - Configure as described above
 
 ## Step 4: Auto-Deploy on Git Push (Optional)
 
@@ -196,8 +170,8 @@ The repository includes GitHub Actions workflows:
 ### GitHub Actions Build Fails
 
 - Check Actions tab for error logs
-- Verify Docker Hub secrets are set correctly
-- Ensure Dockerfile syntax is correct
+- Verify Dockerfile syntax is correct
+- Ensure all dependencies are in requirements.txt
 
 ### RunPod Build Fails
 

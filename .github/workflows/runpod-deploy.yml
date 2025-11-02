@@ -1,37 +1,23 @@
-name: Deploy to RunPod
+name: RunPod Deployment Info
 
 on:
   workflow_dispatch:
-    inputs:
-      endpoint_id:
-        description: 'RunPod Endpoint ID'
-        required: true
-  push:
-    branches: [ main, master ]
-    tags:
-      - 'v*'
-
-env:
-  IMAGE_NAME: sesame-csm-1b-api
 
 jobs:
-  deploy:
+  info:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Deploy to RunPod
+    - name: Deployment Information
       run: |
-        echo "Deploy to RunPod using GitHub integration:"
-        echo "1. Go to RunPod Console -> Serverless -> New Endpoint"
-        echo "2. Select 'Connect GitHub Repository'"
-        echo "3. Select this repository"
-        echo "4. Configure your endpoint settings"
-        echo ""
-        echo "Or use RunPod API:"
-        echo "Endpoint ID: ${{ github.event.inputs.endpoint_id }}"
-        echo "Image: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
-
+        echo "## RunPod Deployment" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Your repository is ready for RunPod deployment!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Deploy Steps:" >> $GITHUB_STEP_SUMMARY
+        echo "1. Go to [RunPod Console](https://www.runpod.io/console/serverless)" >> $GITHUB_STEP_SUMMARY
+        echo "2. Click 'New Endpoint'" >> $GITHUB_STEP_SUMMARY
+        echo "3. Select 'Build from Dockerfile' or 'Connect GitHub Repository'" >> $GITHUB_STEP_SUMMARY
+        echo "4. Select this repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "5. Configure endpoint settings" >> $GITHUB_STEP_SUMMARY
+        echo "6. Deploy!" >> $GITHUB_STEP_SUMMARY

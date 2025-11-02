@@ -45,14 +45,9 @@ git push -u origin main
 4. Click "Create repository"
 5. Copy the repository URL and use it in Step 1
 
-### Step 3: Set Up GitHub Secrets (Optional - for CI/CD)
+### Step 3: Deploy to RunPod
 
-1. Go to your repository on GitHub
-2. Click **Settings** → **Secrets and variables** → **Actions**
-3. Click **New repository secret**
-4. Add:
-   - `DOCKERHUB_USERNAME`: Your Docker Hub username
-   - `DOCKERHUB_PASSWORD`: Your Docker Hub password
+RunPod builds directly from your GitHub repository - no Docker Hub needed!
 
 ### Step 4: Deploy to RunPod via GitHub
 

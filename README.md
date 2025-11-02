@@ -34,10 +34,9 @@ The Sesame CSM 1B model is a state-of-the-art text-to-speech model that converts
 
 ## Prerequisites
 
-1. **GitHub Account**: For repository hosting and CI/CD
-2. **Docker Hub Account**: For pushing the container image
-3. **RunPod Account**: With credits for serverless deployments
-4. **Local Docker** (optional): For building and testing the container locally
+1. **GitHub Account**: For repository hosting and deployment
+2. **RunPod Account**: With credits for serverless deployments
+3. **Local Docker** (optional): For building and testing the container locally
 
 ## Deployment Options
 
