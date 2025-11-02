@@ -34,23 +34,27 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 async def verify_api_key(x_api_key: Optional[str] = Security(api_key_header)):
-    """Verify API key from header or allow if no key is configured"""
-    # If no API key is configured, allow all requests (development mode)
+    """
+    Verify custom API key (optional additional security layer).
+    RunPod handles primary authentication via Authorization: Bearer header at load balancer level.
+    This is an optional extra security layer if you set API_KEY environment variable.
+    """
+    # If no custom API key is configured, allow all requests
+    # RunPod's load balancer already handles authentication
     if not API_KEY:
-        logger.warning("No API_KEY configured - running in open mode")
         return True
     
-    # If API key is configured, require it
+    # If custom API key is configured (optional extra security), require it
     if not x_api_key:
         raise HTTPException(
             status_code=401,
-            detail="Unauthorized: Missing API key. Please provide X-API-Key header."
+            detail="Unauthorized: Missing custom API key. Please provide X-API-Key header."
         )
     
     if x_api_key != API_KEY:
         raise HTTPException(
             status_code=401,
-            detail="Unauthorized: Invalid API key."
+            detail="Unauthorized: Invalid custom API key."
         )
     
     return True
@@ -148,7 +152,11 @@ async def health_check(api_key_valid: bool = Depends(verify_api_key)):
 
 @app.get("/ping")
 async def ping():
-    """Ping endpoint for RunPod health checks (no auth required for health monitoring)"""
+    """
+    Ping endpoint for RunPod health checks.
+    Note: RunPod load balancer requires Authorization header, but this endpoint
+    has no custom authentication for health monitoring purposes.
+    """
     return {"status": "ok"}
 
 
