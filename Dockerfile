@@ -26,6 +26,8 @@ COPY app.py .
 ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV MODEL_NAME=saishah/sesame-csm-1b
+# API_KEY can be set in RunPod endpoint environment variables
+# If not set, API runs in open mode (not recommended for production)
 
 # Expose port
 EXPOSE 8000

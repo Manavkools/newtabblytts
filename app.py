@@ -6,7 +6,8 @@ import io
 import logging
 from typing import Optional
 import torch
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Security, Depends
+from fastapi.security import APIKeyHeader
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 import uvicorn
@@ -26,6 +27,33 @@ device = None
 MODEL_NAME = os.getenv("MODEL_NAME", "saishah/sesame-csm-1b")
 PORT = int(os.getenv("PORT", 8000))
 DEVICE = os.getenv("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
+API_KEY = os.getenv("API_KEY", os.getenv("RUNPOD_API_KEY", ""))  # Support both API_KEY and RUNPOD_API_KEY
+
+# API Key Security - accepts X-API-Key header
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(x_api_key: Optional[str] = Security(api_key_header)):
+    """Verify API key from header or allow if no key is configured"""
+    # If no API key is configured, allow all requests (development mode)
+    if not API_KEY:
+        logger.warning("No API_KEY configured - running in open mode")
+        return True
+    
+    # If API key is configured, require it
+    if not x_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: Missing API key. Please provide X-API-Key header."
+        )
+    
+    if x_api_key != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: Invalid API key."
+        )
+    
+    return True
 
 
 class TextInput(BaseModel):
@@ -97,17 +125,18 @@ async def startup_event():
 
 
 @app.get("/")
-async def root():
+async def root(api_key_valid: bool = Depends(verify_api_key)):
     """Root endpoint"""
     return {
         "service": "Sesame CSM 1B TTS API",
         "status": "running",
-        "model_loaded": model is not None
+        "model_loaded": model is not None,
+        "auth_enabled": bool(API_KEY)
     }
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(api_key_valid: bool = Depends(verify_api_key)):
     """Health check endpoint for RunPod"""
     if model is None:
         return JSONResponse(
@@ -119,12 +148,12 @@ async def health_check():
 
 @app.get("/ping")
 async def ping():
-    """Ping endpoint for RunPod health checks"""
+    """Ping endpoint for RunPod health checks (no auth required for health monitoring)"""
     return {"status": "ok"}
 
 
 @app.post("/generate")
-async def generate_audio(input_data: TextInput):
+async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(verify_api_key)):
     """
     Generate audio from text using Sesame CSM 1B model
     
@@ -233,7 +262,7 @@ async def generate_audio(input_data: TextInput):
 
 
 @app.post("/run")
-async def runpod_handler(job: dict):
+async def runpod_handler(job: dict, api_key_valid: bool = Depends(verify_api_key)):
     """
     RunPod serverless handler endpoint
     Accepts RunPod job format and returns result

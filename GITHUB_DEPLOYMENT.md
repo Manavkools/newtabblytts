@@ -73,7 +73,10 @@ RunPod will build directly from your GitHub repository using the Dockerfile - no
    PORT=8000
    MODEL_NAME=saishah/sesame-csm-1b
    DEVICE=cuda
+   API_KEY=your-secret-api-key-here
    ```
+   
+   **Important:** Set a strong `API_KEY` to secure your endpoint. Users will need to include this in the `X-API-Key` header when making requests.
 
 6. **Deploy**
    - Click **"Create Endpoint"**
