@@ -1,0 +1,37 @@
+name: Deploy to RunPod
+
+on:
+  workflow_dispatch:
+    inputs:
+      endpoint_id:
+        description: 'RunPod Endpoint ID'
+        required: true
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+
+env:
+  IMAGE_NAME: sesame-csm-1b-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to RunPod
+      run: |
+        echo "Deploy to RunPod using GitHub integration:"
+        echo "1. Go to RunPod Console -> Serverless -> New Endpoint"
+        echo "2. Select 'Connect GitHub Repository'"
+        echo "3. Select this repository"
+        echo "4. Configure your endpoint settings"
+        echo ""
+        echo "Or use RunPod API:"
+        echo "Endpoint ID: ${{ github.event.inputs.endpoint_id }}"
+        echo "Image: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
+
