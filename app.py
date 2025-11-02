@@ -70,6 +70,15 @@ def load_model():
     """Load the Sesame CSM 1B model and processor"""
     global model, processor, device
     
+    # Verify transformers is installed before trying to import
+    try:
+        import transformers
+        logger.info(f"Transformers version: {transformers.__version__}")
+    except ImportError as e:
+        logger.error(f"CRITICAL: transformers library is not installed: {e}")
+        logger.error("Install with: pip install transformers")
+        raise ImportError("transformers library not found. Please install it.")
+    
     try:
         from transformers import AutoProcessor, AutoModelForTextToSpeech
         
@@ -78,6 +87,7 @@ def load_model():
         
         # Set device
         device = torch.device(DEVICE if torch.cuda.is_available() and DEVICE == "cuda" else "cpu")
+        logger.info(f"Using device: {device}")
         
         # Load processor
         logger.info("Loading processor...")
@@ -102,14 +112,19 @@ def load_model():
         model.eval()
         
         logger.info(f"Model loaded successfully on {device}")
+        logger.info(f"Model config: {model.config if hasattr(model, 'config') else 'N/A'}")
         
     except ImportError as e:
         logger.error(f"Import error: {str(e)}")
-        logger.error("Please ensure transformers is installed: pip install transformers")
+        logger.error("Failed to import from transformers library")
+        logger.error("Check that transformers is properly installed")
         raise
     except Exception as e:
         logger.error(f"Error loading model: {str(e)}")
         logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error details: {repr(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise
 
 
