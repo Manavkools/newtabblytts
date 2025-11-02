@@ -5,6 +5,7 @@ import os
 import io
 import logging
 from typing import Optional
+from contextlib import asynccontextmanager
 import torch
 from fastapi import FastAPI, HTTPException, Header, Security, Depends
 from fastapi.security import APIKeyHeader
@@ -16,9 +17,7 @@ import uvicorn
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Sesame CSM 1B TTS API", version="1.0.0")
-
-# Global model variables
+# Global model variables (will be set during startup)
 model = None
 processor = None
 device = None
@@ -81,9 +80,12 @@ def load_model():
         device = torch.device(DEVICE if torch.cuda.is_available() and DEVICE == "cuda" else "cpu")
         
         # Load processor
+        logger.info("Loading processor...")
         processor = AutoProcessor.from_pretrained(MODEL_NAME)
+        logger.info("Processor loaded successfully")
         
         # Load model
+        logger.info("Loading model...")
         if device.type == "cuda":
             model = AutoModelForTextToSpeech.from_pretrained(
                 MODEL_NAME,
@@ -101,31 +103,39 @@ def load_model():
         
         logger.info(f"Model loaded successfully on {device}")
         
-    except ImportError:
-        # Fallback: try alternative loading methods if transformers doesn't work
-        logger.warning("Standard transformers import failed, trying alternative...")
-        try:
-            # Some TTS models use different libraries
-            import whisperx  # or other TTS library
-            # Add alternative loading logic here
-            raise NotImplementedError("Please configure the model loading based on actual library")
-        except ImportError:
-            logger.error("Could not import required libraries. Please install transformers.")
-            raise
+    except ImportError as e:
+        logger.error(f"Import error: {str(e)}")
+        logger.error("Please ensure transformers is installed: pip install transformers")
+        raise
     except Exception as e:
         logger.error(f"Error loading model: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
         raise
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the model on startup"""
+# Lifespan event handler for startup and shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for startup and shutdown"""
+    # Startup
     try:
+        logger.info("Starting application...")
         load_model()
         logger.info("API startup complete")
     except Exception as e:
         logger.error(f"Failed to start API: {str(e)}")
+        logger.error(f"Error details: {repr(e)}")
         # Don't raise - allow health check to indicate failure
+        # Model will be None, which health check will detect
+    
+    yield
+    
+    # Shutdown (if needed)
+    logger.info("Shutting down application...")
+
+
+# Initialize FastAPI app with lifespan handler
+app = FastAPI(title="Sesame CSM 1B TTS API", version="1.0.0", lifespan=lifespan)
 
 
 @app.get("/")
