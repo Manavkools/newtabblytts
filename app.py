@@ -251,14 +251,11 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
                     down = sr
                     audio_data = resample_poly(audio_data, up, down)
                 audio_data = np.asarray(audio_data, dtype=np.float32)
-                # Save to a temporary WAV file and pass its path
-                tmp_wav = tempfile.NamedTemporaryFile(prefix="ref_audio_", suffix=".wav", delete=False)
-                sf.write(tmp_wav.name, audio_data, int(target_sr), format='WAV')
-                # Context turn with reference audio file path
+                # Pass raw float32 array as expected by the CSM processor ("path" accepts array in examples)
                 conversation.append({
                     "role": str(input_data.speaker_id or "0"),
                     "content": [
-                        {"type": "audio", "path": tmp_wav.name},
+                        {"type": "audio", "path": audio_data},
                     ],
                 })
             except Exception as e:
