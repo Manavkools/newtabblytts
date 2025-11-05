@@ -232,6 +232,7 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
                 import numpy as np
                 from io import BytesIO
                 from scipy.signal import resample_poly
+                import tempfile
                 
                 resp = requests.get(input_data.reference_audio_url, timeout=20)
                 resp.raise_for_status()
@@ -250,11 +251,14 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
                     down = sr
                     audio_data = resample_poly(audio_data, up, down)
                 audio_data = np.asarray(audio_data, dtype=np.float32)
-                # Context turn with reference audio
+                # Save to a temporary WAV file and pass its path
+                tmp_wav = tempfile.NamedTemporaryFile(prefix="ref_audio_", suffix=".wav", delete=False)
+                sf.write(tmp_wav.name, audio_data, int(target_sr), format='WAV')
+                # Context turn with reference audio file path
                 conversation.append({
                     "role": str(input_data.speaker_id or "0"),
                     "content": [
-                        {"type": "audio", "path": audio_data},
+                        {"type": "audio", "path": tmp_wav.name},
                     ],
                 })
             except Exception as e:
