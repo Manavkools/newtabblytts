@@ -25,8 +25,12 @@ device = None
 # Configuration
 MODEL_NAME = os.getenv("MODEL_NAME", "saishah/sesame-csm-1b")
 PORT = int(os.getenv("PORT", 8000))
+# Allow PORT_HEALTH to be same as PORT by default for RunPod LB
+PORT_HEALTH = int(os.getenv("PORT_HEALTH", PORT))
 DEVICE = os.getenv("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
-API_KEY = os.getenv("API_KEY", os.getenv("RUNPOD_API_KEY", ""))  # Support both API_KEY and RUNPOD_API_KEY
+API_KEY = os.getenv("API_KEY", os.getenv("RUNPOD_API_KEY", ""))  # Optional app-level API key
+HF_TOKEN = os.getenv("HF_TOKEN", os.getenv("HUGGINGFACEHUB_API_TOKEN", ""))  # Optional HF token for gated models
+TRUST_REMOTE_CODE = os.getenv("TRUST_REMOTE_CODE", "false").lower() in {"1", "true", "yes"}
 
 # API Key Security - accepts X-API-Key header
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -91,7 +95,11 @@ def load_model():
         
         # Load processor
         logger.info("Loading processor...")
-        processor = AutoProcessor.from_pretrained(MODEL_NAME)
+        processor = AutoProcessor.from_pretrained(
+            MODEL_NAME,
+            token=HF_TOKEN or None,
+            trust_remote_code=TRUST_REMOTE_CODE,
+        )
         logger.info("Processor loaded successfully")
         
         # Load model
@@ -101,11 +109,15 @@ def load_model():
                 MODEL_NAME,
                 torch_dtype=torch.float16,
                 device_map="auto",
+                token=HF_TOKEN or None,
+                trust_remote_code=TRUST_REMOTE_CODE,
             )
         else:
             model = AutoModelForTextToSpeech.from_pretrained(
                 MODEL_NAME,
                 torch_dtype=torch.float32,
+                token=HF_TOKEN or None,
+                trust_remote_code=TRUST_REMOTE_CODE,
             )
             model = model.to(device)
         
