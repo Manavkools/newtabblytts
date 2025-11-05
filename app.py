@@ -84,7 +84,7 @@ def load_model():
         raise ImportError("transformers library not found. Please install it.")
     
     try:
-        from transformers import AutoProcessor, AutoModelForTextToSpeech
+        from transformers import AutoProcessor, AutoModel
         
         logger.info(f"Loading model: {MODEL_NAME}")
         logger.info(f"Device: {DEVICE}")
@@ -105,7 +105,7 @@ def load_model():
         # Load model
         logger.info("Loading model...")
         if device.type == "cuda":
-            model = AutoModelForTextToSpeech.from_pretrained(
+            model = AutoModel.from_pretrained(
                 MODEL_NAME,
                 torch_dtype=torch.float16,
                 device_map="auto",
@@ -113,7 +113,7 @@ def load_model():
                 trust_remote_code=TRUST_REMOTE_CODE,
             )
         else:
-            model = AutoModelForTextToSpeech.from_pretrained(
+            model = AutoModel.from_pretrained(
                 MODEL_NAME,
                 torch_dtype=torch.float32,
                 token=HF_TOKEN or None,
@@ -125,6 +125,8 @@ def load_model():
         
         logger.info(f"Model loaded successfully on {device}")
         logger.info(f"Model config: {model.config if hasattr(model, 'config') else 'N/A'}")
+        if not hasattr(model, "generate"):
+            logger.warning("Model does not expose a 'generate' method; the repository may define a different inference API when using trust_remote_code.")
         
     except ImportError as e:
         logger.error(f"Import error: {str(e)}")
