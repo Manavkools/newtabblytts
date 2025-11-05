@@ -251,6 +251,14 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
                     down = sr
                     audio_data = resample_poly(audio_data, up, down)
                 audio_data = np.asarray(audio_data, dtype=np.float32)
+                # Guard against empty/too-short clips
+                min_len = int(target_sr * 0.25)  # 250 ms minimum
+                if audio_data.size == 0:
+                    raise ValueError("Reference audio decoded to empty array")
+                if audio_data.size < min_len:
+                    # Pad with zeros to minimum length to avoid decoder kernel errors
+                    pad = min_len - audio_data.size
+                    audio_data = np.pad(audio_data, (0, pad), mode='constant')
                 # Pass raw float32 array as expected by the CSM processor ("path" accepts array in examples)
                 conversation.append({
                     "role": str(input_data.speaker_id or "0"),
