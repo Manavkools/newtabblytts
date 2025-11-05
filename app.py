@@ -219,76 +219,79 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
     try:
         logger.info(f"Generating audio for text: {input_data.text[:50]}...")
         
-        # Process input text
-        # Handle processor call - some models use different parameter names
+        # For CSM, using chat template with speaker id often yields better audio
+        conversation = [
+            {"role": "0", "content": [{"type": "text", "text": input_data.text}]}
+        ]
+        
+        # Prepare inputs; fall back to simple tokenization if template unsupported
         try:
-            if input_data.language:
-                inputs = processor(text=input_data.text, return_tensors="pt", language=input_data.language)
-            else:
-                inputs = processor(text=input_data.text, return_tensors="pt")
-        except TypeError:
-            # If language parameter not supported, use without it
+            inputs = processor.apply_chat_template(
+                conversation,
+                tokenize=True,
+                return_dict=True,
+            )
+        except Exception:
             inputs = processor(text=input_data.text, return_tensors="pt")
         
         # Move inputs to device
-        inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v 
-                 for k, v in inputs.items()}
+        inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
         
-        # Generate audio
+        # Generate audio - for CSM, output_audio=True yields decoded waveform codes
         with torch.no_grad():
+            gen_kwargs = {}
+            # Some repos don't accept temperature; pass only if supported
+            try:
+                gen_kwargs["temperature"] = input_data.temperature
+            except Exception:
+                pass
             if device.type == "cuda":
-                with torch.cuda.amp.autocast():
-                    # Try to generate with temperature parameter
+                with torch.amp.autocast("cuda"):
                     try:
-                        audio_output = model.generate(**inputs, temperature=input_data.temperature)
+                        audio_output = model.generate(**inputs, output_audio=True, **gen_kwargs)
                     except TypeError:
-                        # If temperature not supported, generate without it
-                        audio_output = model.generate(**inputs)
+                        audio_output = model.generate(**inputs, output_audio=True)
             else:
                 try:
-                    audio_output = model.generate(**inputs, temperature=input_data.temperature)
+                    audio_output = model.generate(**inputs, output_audio=True, **gen_kwargs)
                 except TypeError:
-                    audio_output = model.generate(**inputs)
+                    audio_output = model.generate(**inputs, output_audio=True)
         
-        # Convert to numpy and then to bytes
-        if isinstance(audio_output, torch.Tensor):
-            audio_np = audio_output.cpu().numpy()
-        else:
-            audio_np = audio_output
-        
-        # Get sampling rate (usually 16000 or 22050 for TTS models)
-        # Check multiple possible locations for sample_rate
-        sampling_rate = (
-            getattr(model.config, 'sample_rate', None) or
-            getattr(model.config, 'sampling_rate', None) or
-            getattr(processor, 'sampling_rate', None) or
-            22050  # Default fallback
-        )
-        
-        # Convert numpy array to WAV bytes
-        import numpy as np
-        import soundfile as sf
-        
-        # Ensure audio is in the right format (1D array)
-        if len(audio_np.shape) > 1:
-            audio_np = audio_np.flatten()
-        
-        # Normalize audio - handle different output formats
-        # Some models output normalized [-1, 1], others [0, 1], or raw values
-        audio_max = np.abs(audio_np).max()
-        if audio_max > 1.0:
-            # Scale down if values are outside [-1, 1]
-            audio_normalized = np.clip(audio_np / audio_max, -1.0, 1.0)
-        else:
-            audio_normalized = np.clip(audio_np, -1.0, 1.0)
-        
-        if audio_normalized.dtype != np.float32:
-            audio_normalized = audio_normalized.astype(np.float32)
-        
-        # Create WAV file in memory
+        # Serialize audio using processor if available, else manual write
         audio_bytes = io.BytesIO()
-        sf.write(audio_bytes, audio_normalized, sampling_rate, format='WAV')
-        audio_bytes.seek(0)
+        try:
+            # processor.save_audio can save a single or list of audios
+            # Save to a temporary file-like by using soundfile directly after extracting array
+            raise NotImplementedError
+        except Exception:
+            import numpy as np
+            import soundfile as sf
+            
+            # audio_output may be a list/tuple or tensor; handle common cases
+            if isinstance(audio_output, (list, tuple)):
+                audio_arr = audio_output[0]
+            else:
+                audio_arr = audio_output
+            
+            if hasattr(audio_arr, "cpu"):
+                audio_arr = audio_arr.cpu().numpy()
+            audio_arr = np.asarray(audio_arr)
+            if audio_arr.ndim > 1:
+                # flatten to mono if multi-channel
+                audio_arr = audio_arr.squeeze()
+            
+            # Use 24000 Hz as CSM default per model card if processor doesn't expose
+            sampling_rate = (
+                getattr(model.config, 'sample_rate', None) or
+                getattr(model.config, 'sampling_rate', None) or
+                getattr(getattr(processor, 'feature_extractor', None) or object(), 'sampling_rate', None) or
+                24000
+            )
+            
+            # Ensure float32 within [-1, 1]
+            audio_arr = np.clip(audio_arr, -1.0, 1.0).astype(np.float32)
+            sf.write(audio_bytes, audio_arr, int(sampling_rate), format='WAV')
+            audio_bytes.seek(0)
         
         logger.info("Audio generation successful")
         
