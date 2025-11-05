@@ -68,6 +68,8 @@ class TextInput(BaseModel):
     text: str = Field(..., description="Text to convert to speech", min_length=1, max_length=500)
     language: Optional[str] = Field(None, description="Language code (optional)")
     temperature: Optional[float] = Field(0.7, description="Generation temperature", ge=0.0, le=2.0)
+    speaker_id: Optional[str] = Field("0", description="Speaker id string for conversation role")
+    reference_audio_url: Optional[str] = Field(None, description="URL to reference audio to condition voice")
 
 
 def load_model():
@@ -219,10 +221,50 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
     try:
         logger.info(f"Generating audio for text: {input_data.text[:50]}...")
         
-        # For CSM, using chat template with speaker id often yields better audio
-        conversation = [
-            {"role": "0", "content": [{"type": "text", "text": input_data.text}]}
-        ]
+        # For CSM, using chat template with speaker id and optional reference audio yields better consistency
+        conversation = []
+        
+        # If a reference audio URL is provided, fetch and include as context
+        if input_data.reference_audio_url:
+            try:
+                import requests
+                import soundfile as sf
+                import numpy as np
+                from io import BytesIO
+                from scipy.signal import resample_poly
+                
+                resp = requests.get(input_data.reference_audio_url, timeout=20)
+                resp.raise_for_status()
+                audio_data, sr = sf.read(BytesIO(resp.content), always_2d=False)
+                if audio_data.ndim > 1:
+                    audio_data = audio_data.mean(axis=1)
+                target_sr = (
+                    getattr(getattr(processor, 'feature_extractor', None) or object(), 'sampling_rate', None) or
+                    24000
+                )
+                if sr != target_sr and sr > 0:
+                    # Resample with polyphase filtering
+                    # Compute up/down factors approximately
+                    # Use simple resample_poly with gcd approximation
+                    up = target_sr
+                    down = sr
+                    audio_data = resample_poly(audio_data, up, down)
+                audio_data = np.asarray(audio_data, dtype=np.float32)
+                # Context turn with reference audio
+                conversation.append({
+                    "role": str(input_data.speaker_id or "0"),
+                    "content": [
+                        {"type": "audio", "path": audio_data},
+                    ],
+                })
+            except Exception as e:
+                logger.warning(f"Failed to fetch/process reference audio: {e}")
+        
+        # Add the actual text prompt turn
+        conversation.append({
+            "role": str(input_data.speaker_id or "0"),
+            "content": [{"type": "text", "text": input_data.text}],
+        })
         
         # Prepare inputs; fall back to simple tokenization if template unsupported
         try:
