@@ -70,6 +70,7 @@ class TextInput(BaseModel):
     temperature: Optional[float] = Field(0.7, description="Generation temperature", ge=0.0, le=2.0)
     speaker_id: Optional[str] = Field("0", description="Speaker id string for conversation role")
     reference_audio_url: Optional[str] = Field(None, description="URL to reference audio to condition voice")
+    reference_text: Optional[str] = Field(None, description="Transcript that matches the reference audio (recommended)")
 
 
 def load_model():
@@ -260,11 +261,12 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
                     pad = min_len - audio_data.size
                     audio_data = np.pad(audio_data, (0, pad), mode='constant')
                 # Pass raw float32 array as expected by the CSM processor ("path" accepts array in examples)
+                ctx_content = [{"type": "audio", "path": audio_data}]
+                if input_data.reference_text:
+                    ctx_content.append({"type": "text", "text": input_data.reference_text})
                 conversation.append({
                     "role": str(input_data.speaker_id or "0"),
-                    "content": [
-                        {"type": "audio", "path": audio_data},
-                    ],
+                    "content": ctx_content,
                 })
             except Exception as e:
                 logger.warning(f"Failed to fetch/process reference audio: {e}")
