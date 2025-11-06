@@ -137,39 +137,75 @@ def load_model():
         
         # Patch the model's _merge_input_ids_with_input_values to convert audio embeddings to float16
         if device.type == "cuda" and hasattr(model, '_merge_input_ids_with_input_values'):
+            import inspect
+            import functools
             original_merge = model._merge_input_ids_with_input_values
             model_dtype = torch.float16
             
-            def patched_merge(self, input_ids, inputs_embeds, input_values, *args, **kwargs):
-                """Patched version that ensures audio embeddings are converted to float16"""
-                # Accept all arguments that the original method might receive
-                # The error occurs when audio_embeds (Float) is assigned to inputs_embeds[audio_token_mask] (Half)
-                # We need to intercept where audio_embeds is created and ensure it's in float16
-                # Since we can't easily intercept the internal creation, we'll patch the method to handle the conversion
-                try:
-                    return original_merge(input_ids, inputs_embeds, input_values, *args, **kwargs)
-                except RuntimeError as e:
-                    if "dtypes match" in str(e) and "Half" in str(e) and "Float" in str(e):
-                        # The audio_embeds are created in float32 inside the method
-                        # We need to patch the internal code, but since we can't, we'll work around it
-                        # by ensuring input_values trigger float16 processing
-                        logger.warning("Dtype mismatch in audio embeddings - attempting workaround...")
-                        # Try converting inputs_embeds to float32 temporarily, process, convert back
-                        # This is not ideal but should work
-                        inputs_embeds_orig_dtype = inputs_embeds.dtype
-                        if inputs_embeds_orig_dtype == torch.float16:
-                            inputs_embeds_f32 = inputs_embeds.to(torch.float32)
-                            result = original_merge(input_ids, inputs_embeds_f32, input_values, *args, **kwargs)
-                            # Convert result back to float16
-                            if isinstance(result, torch.Tensor):
-                                return result.to(model_dtype)
-                            elif isinstance(result, tuple):
-                                return tuple(r.to(model_dtype) if isinstance(r, torch.Tensor) else r for r in result)
-                            elif isinstance(result, dict):
-                                return {k: (v.to(model_dtype) if isinstance(v, torch.Tensor) else v) for k, v in result.items()}
-                            return result
+            # Get the original method signature to preserve it
+            try:
+                sig = inspect.signature(original_merge)
+                # Create a wrapper that accepts any arguments
+                @functools.wraps(original_merge)
+                def patched_merge(*args, **kwargs):
+                    """Patched version that ensures audio embeddings are converted to float16"""
+                    # Extract the arguments we need
+                    input_ids = args[0] if len(args) > 0 else kwargs.get('input_ids')
+                    inputs_embeds = args[1] if len(args) > 1 else kwargs.get('inputs_embeds')
+                    input_values = args[2] if len(args) > 2 else kwargs.get('input_values')
+                    
+                    # The error occurs when audio_embeds (Float) is assigned to inputs_embeds[audio_token_mask] (Half)
+                    # We need to intercept where audio_embeds is created and ensure it's in float16
+                    # Since we can't easily intercept the internal creation, we'll patch the method to handle the conversion
+                    try:
+                        return original_merge(*args, **kwargs)
+                    except RuntimeError as e:
+                        if "dtypes match" in str(e) and "Half" in str(e) and "Float" in str(e):
+                            # The audio_embeds are created in float32 inside the method
+                            # We need to patch the internal code, but since we can't, we'll work around it
+                            # by ensuring input_values trigger float16 processing
+                            logger.warning("Dtype mismatch in audio embeddings - attempting workaround...")
+                            # Try converting inputs_embeds to float32 temporarily, process, convert back
+                            # This is not ideal but should work
+                            if inputs_embeds is not None and inputs_embeds.dtype == torch.float16:
+                                # Update kwargs with float32 version
+                                if 'inputs_embeds' in kwargs:
+                                    kwargs['inputs_embeds'] = inputs_embeds.to(torch.float32)
+                                elif len(args) > 1:
+                                    args_list = list(args)
+                                    args_list[1] = inputs_embeds.to(torch.float32)
+                                    args = tuple(args_list)
+                                
+                                result = original_merge(*args, **kwargs)
+                                # Convert result back to float16
+                                if isinstance(result, torch.Tensor):
+                                    return result.to(model_dtype)
+                                elif isinstance(result, tuple):
+                                    return tuple(r.to(model_dtype) if isinstance(r, torch.Tensor) else r for r in result)
+                                elif isinstance(result, dict):
+                                    return {k: (v.to(model_dtype) if isinstance(v, torch.Tensor) else v) for k, v in result.items()}
+                                return result
+                            raise
                         raise
-                    raise
+            except Exception as e:
+                logger.warning(f"Could not inspect method signature, using simple wrapper: {e}")
+                # Fallback: simple wrapper that accepts everything
+                def patched_merge(*args, **kwargs):
+                    try:
+                        return original_merge(*args, **kwargs)
+                    except RuntimeError as e:
+                        if "dtypes match" in str(e) and "Half" in str(e) and "Float" in str(e):
+                            logger.warning("Dtype mismatch in audio embeddings - attempting workaround...")
+                            # Try to convert inputs_embeds if present
+                            if len(args) > 1 and isinstance(args[1], torch.Tensor) and args[1].dtype == torch.float16:
+                                args_list = list(args)
+                                args_list[1] = args[1].to(torch.float32)
+                                result = original_merge(*tuple(args_list), **kwargs)
+                                if isinstance(result, torch.Tensor):
+                                    return result.to(model_dtype)
+                                return result
+                            raise
+                        raise
             
             # Bind the patched method to the model instance
             import types
