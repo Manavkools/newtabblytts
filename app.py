@@ -126,6 +126,55 @@ def load_model():
         
         model.eval()
         
+        # Ensure all model components are in the correct dtype (especially audio encoders)
+        if device.type == "cuda":
+            model_dtype = torch.float16
+            # Recursively convert all parameters to float16 if they're not already
+            for name, param in model.named_parameters():
+                if param.dtype != model_dtype:
+                    param.data = param.data.to(model_dtype)
+            logger.info("Ensured all model parameters are in float16")
+        
+        # Patch the model's _merge_input_ids_with_input_values to convert audio embeddings to float16
+        if device.type == "cuda" and hasattr(model, '_merge_input_ids_with_input_values'):
+            original_merge = model._merge_input_ids_with_input_values
+            model_dtype = torch.float16
+            
+            def patched_merge(self, input_ids, inputs_embeds, input_values):
+                """Patched version that ensures audio embeddings are converted to float16"""
+                # The error occurs when audio_embeds (Float) is assigned to inputs_embeds[audio_token_mask] (Half)
+                # We need to intercept where audio_embeds is created and ensure it's in float16
+                # Since we can't easily intercept the internal creation, we'll patch the method to handle the conversion
+                try:
+                    return original_merge(input_ids, inputs_embeds, input_values)
+                except RuntimeError as e:
+                    if "dtypes match" in str(e) and "Half" in str(e) and "Float" in str(e):
+                        # The audio_embeds are created in float32 inside the method
+                        # We need to patch the internal code, but since we can't, we'll work around it
+                        # by ensuring input_values trigger float16 processing
+                        logger.warning("Dtype mismatch in audio embeddings - attempting workaround...")
+                        # Try converting inputs_embeds to float32 temporarily, process, convert back
+                        # This is not ideal but should work
+                        inputs_embeds_orig_dtype = inputs_embeds.dtype
+                        if inputs_embeds_orig_dtype == torch.float16:
+                            inputs_embeds_f32 = inputs_embeds.to(torch.float32)
+                            result = original_merge(input_ids, inputs_embeds_f32, input_values)
+                            # Convert result back to float16
+                            if isinstance(result, torch.Tensor):
+                                return result.to(model_dtype)
+                            elif isinstance(result, tuple):
+                                return tuple(r.to(model_dtype) if isinstance(r, torch.Tensor) else r for r in result)
+                            elif isinstance(result, dict):
+                                return {k: (v.to(model_dtype) if isinstance(v, torch.Tensor) else v) for k, v in result.items()}
+                            return result
+                        raise
+                    raise
+            
+            # Bind the patched method to the model instance
+            import types
+            model._merge_input_ids_with_input_values = types.MethodType(patched_merge, model)
+            logger.info("Patched _merge_input_ids_with_input_values to handle dtype conversion")
+        
         logger.info(f"Model loaded successfully on {device}")
         logger.info(f"Model config: {model.config if hasattr(model, 'config') else 'N/A'}")
         if not hasattr(model, "generate"):
@@ -260,8 +309,13 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
                     # Pad with zeros to minimum length to avoid decoder kernel errors
                     pad = min_len - audio_data.size
                     audio_data = np.pad(audio_data, (0, pad), mode='constant')
-                # Pass raw float32 array as expected by the CSM processor ("path" accepts array in examples)
-                ctx_content = [{"type": "audio", "path": audio_data}]
+                
+                # Keep as numpy array for processor (processor expects numpy array or path)
+                # The processor will create embeddings, which we'll need to convert later
+                audio_for_processor = audio_data
+                
+                # Pass audio array - processor will create embeddings from it
+                ctx_content = [{"type": "audio", "path": audio_for_processor}]
                 if input_data.reference_text:
                     ctx_content.append({"type": "text", "text": input_data.reference_text})
                 conversation.append({
@@ -301,11 +355,20 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
             # Default to float32 if detection fails
             model_dtype = torch.float32
         
-        # Move inputs to device and convert to model's dtype
-        inputs = {
-            k: (v.to(device).to(model_dtype) if isinstance(v, torch.Tensor) else v)
-            for k, v in inputs.items()
-        }
+        # Recursively convert all tensors to device and model dtype
+        def convert_tensors(obj):
+            """Recursively convert tensors in nested structures"""
+            if isinstance(obj, torch.Tensor):
+                return obj.to(device).to(model_dtype)
+            elif isinstance(obj, dict):
+                return {k: convert_tensors(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return type(obj)(convert_tensors(item) for item in obj)
+            else:
+                return obj
+        
+        # Move inputs to device and convert to model's dtype (handles nested structures)
+        inputs = convert_tensors(inputs)
         
         # Generate audio - for CSM, output_audio=True yields decoded waveform codes
         with torch.no_grad():
