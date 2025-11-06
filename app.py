@@ -110,7 +110,7 @@ def load_model():
         if device.type == "cuda":
             model = AutoModel.from_pretrained(
                 MODEL_NAME,
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
                 device_map="auto",
                 token=HF_TOKEN or None,
                 trust_remote_code=TRUST_REMOTE_CODE,
@@ -118,7 +118,7 @@ def load_model():
         else:
             model = AutoModel.from_pretrained(
                 MODEL_NAME,
-                torch_dtype=torch.float32,
+                dtype=torch.float32,
                 token=HF_TOKEN or None,
                 trust_remote_code=TRUST_REMOTE_CODE,
             )
