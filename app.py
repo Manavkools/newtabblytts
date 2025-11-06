@@ -146,12 +146,23 @@ def load_model():
                 # Extract inputs_embeds if present for dtype conversion
                 inputs_embeds = kwargs.get('inputs_embeds') if 'inputs_embeds' in kwargs else (args[1] if len(args) > 1 else None)
                 
+                # Filter kwargs to remove any that are already provided as positional arguments
+                # The method signature is typically: (self, input_ids, inputs_embeds, input_values, ...)
+                # So we remove these from kwargs if they're in args to avoid "multiple values" error
+                filtered_kwargs = kwargs.copy()
+                if len(args) > 0:
+                    filtered_kwargs.pop('input_ids', None)
+                if len(args) > 1:
+                    filtered_kwargs.pop('inputs_embeds', None)
+                if len(args) > 2:
+                    filtered_kwargs.pop('input_values', None)
+                
                 # The error occurs when audio_embeds (Float) is assigned to inputs_embeds[audio_token_mask] (Half)
                 # We need to intercept where audio_embeds is created and ensure it's in float16
                 # Since we can't easily intercept the internal creation, we'll patch the method to handle the conversion
                 try:
-                    # Call original with all arguments - this will accept input_values_cutoffs and any other kwargs
-                    return original_merge(self, *args, **kwargs)
+                    # Call original with all arguments - filtered kwargs to avoid duplicates
+                    return original_merge(self, *args, **filtered_kwargs)
                 except RuntimeError as e:
                     if "dtypes match" in str(e) and "Half" in str(e) and "Float" in str(e):
                         # The audio_embeds are created in float32 inside the method
@@ -161,15 +172,13 @@ def load_model():
                         # Try converting inputs_embeds to float32 temporarily, process, convert back
                         # This is not ideal but should work
                         if inputs_embeds is not None and isinstance(inputs_embeds, torch.Tensor) and inputs_embeds.dtype == torch.float16:
-                            # Update kwargs or args with float32 version
-                            if 'inputs_embeds' in kwargs:
-                                kwargs['inputs_embeds'] = inputs_embeds.to(torch.float32)
-                            elif len(args) > 1:
+                            # Update args with float32 version (inputs_embeds is positional, not in filtered_kwargs)
+                            if len(args) > 1:
                                 args_list = list(args)
                                 args_list[1] = inputs_embeds.to(torch.float32)
                                 args = tuple(args_list)
                             
-                            result = original_merge(self, *args, **kwargs)
+                            result = original_merge(self, *args, **filtered_kwargs)
                             # Convert result back to float16
                             if isinstance(result, torch.Tensor):
                                 return result.to(model_dtype)
