@@ -287,8 +287,25 @@ async def generate_audio(input_data: TextInput, api_key_valid: bool = Depends(ve
         except Exception:
             inputs = processor(text=input_data.text, return_tensors="pt")
         
-        # Move inputs to device
-        inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+        # Get model dtype (float16 for CUDA, float32 for CPU)
+        # Try to get dtype from model parameters, fallback to config or default
+        model_dtype = torch.float32
+        try:
+            if hasattr(model, 'parameters'):
+                param = next(model.parameters(), None)
+                if param is not None:
+                    model_dtype = param.dtype
+            elif hasattr(model, 'config') and hasattr(model.config, 'torch_dtype'):
+                model_dtype = model.config.torch_dtype
+        except Exception:
+            # Default to float32 if detection fails
+            model_dtype = torch.float32
+        
+        # Move inputs to device and convert to model's dtype
+        inputs = {
+            k: (v.to(device).to(model_dtype) if isinstance(v, torch.Tensor) else v)
+            for k, v in inputs.items()
+        }
         
         # Generate audio - for CSM, output_audio=True yields decoded waveform codes
         with torch.no_grad():
